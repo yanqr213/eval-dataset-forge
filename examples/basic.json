@@ -1,0 +1,32 @@
+[
+  {
+    "id": "qa-capital-fr",
+    "prompt": "What is the capital of France?",
+    "expected": "Paris",
+    "metadata": {
+      "category": "geography",
+      "difficulty": "easy"
+    },
+    "tags": ["qa", "factual"]
+  },
+  {
+    "id": "tone-positive-001",
+    "prompt": "Classify the tone: 'I cannot wait to see what you build next.'",
+    "expected": "positive",
+    "metadata": {
+      "category": "classification",
+      "difficulty": "easy"
+    },
+    "tags": ["classification", "tone"]
+  },
+  {
+    "id": "rag-policy-001",
+    "prompt": "Answer using the provided policy excerpt: refunds are available within 30 days. Can a customer request a refund after 14 days?",
+    "expected": "Yes, the request is within the 30-day refund window.",
+    "metadata": {
+      "category": "rag",
+      "source": "sample-policy"
+    },
+    "tags": ["rag", "policy"]
+  }
+]

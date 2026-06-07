@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eval-dataset-forge"
+version = "0.1.0"
+description = "A small Python CLI for building validated LLM evaluation datasets from JSON, JSONL, or CSV templates."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Open Source Contributors" }]
+keywords = ["llm", "evaluation", "dataset", "cli", "jsonl", "csv"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.scripts]
+eval-dataset-forge = "eval_dataset_forge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

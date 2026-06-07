@@ -1,0 +1,4 @@
+id,prompt,expected,metadata,tags
+qa-capital-jp,What is the capital of Japan?,Tokyo,"{""category"": ""geography"", ""difficulty"": ""easy""}","qa,factual"
+classification-risk-001,Classify the risk level: customer mentions password reset loop.,medium,"{""category"": ""support"", ""owner"": ""quality""}","classification,risk"
+rag-policy-002,Policy says support replies within 2 business days. What should the assistant promise?,A reply within 2 business days.,"{""category"": ""rag"", ""source"": ""sample-policy""}","rag,policy"
