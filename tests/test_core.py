@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -10,8 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from eval_dataset_forge.core import (  # noqa: E402
     DatasetError,
     build_dataset,
+    create_dataset_card,
     dataset_stats,
     read_records,
+    render_dataset_card,
     split_records,
     validate_records,
     write_records,
@@ -89,6 +92,38 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(stats["records"], 3)
         self.assertEqual(stats["duplicate_ids"], 1)
         self.assertEqual(stats["tags"]["qa"], 2)
+
+    def test_create_dataset_card_summarizes_without_sample_text(self):
+        card = create_dataset_card(
+            self.sample_records(),
+            dataset_name="support eval",
+            source_path="examples/basic.json",
+            purpose="PR eval review",
+            owner="quality",
+        )
+        self.assertEqual(card["schema_version"], "eval-dataset-forge-card/v1")
+        self.assertEqual(card["summary"]["input_count"], 3)
+        self.assertEqual(card["summary"]["valid_count"], 3)
+        self.assertEqual(card["summary"]["output_count"], 2)
+        self.assertEqual(card["summary"]["duplicate_id_count"], 1)
+        self.assertTrue(card["dataset_hash"].startswith("sha256:"))
+        self.assertEqual(card["field_coverage"]["metadata"]["count"], 2)
+        self.assertIn("qa", card["tags"])
+        self.assertIn("duplicate IDs", " ".join(card["warnings"]))
+        rendered = render_dataset_card(card, "markdown")
+        self.assertIn("Eval Dataset Card: support eval", rendered)
+        self.assertIn("Dataset hash", rendered)
+        self.assertNotIn("Prompt A", rendered)
+        self.assertNotIn("Answer A", rendered)
+
+    def test_dataset_card_json_is_machine_readable(self):
+        card = create_dataset_card(self.sample_records())
+        rendered = render_dataset_card(card, "json")
+        self.assertEqual(card["dataset_hash"], json.loads(rendered)["dataset_hash"])
+
+    def test_dataset_card_warns_about_missing_tags(self):
+        card = create_dataset_card([{"id": "a", "prompt": "p", "expected": "e"}])
+        self.assertIn("No tags found", " ".join(card["warnings"]))
 
 
 if __name__ == "__main__":

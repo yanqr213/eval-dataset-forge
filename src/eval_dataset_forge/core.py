@@ -281,6 +281,72 @@ def _write_csv(records: list[dict[str, Any]], path: Path) -> None:
             writer.writerow({field: row.get(field, "") for field in fields})
 
 
+def create_dataset_card(
+    records: Iterable[dict[str, Any]],
+    *,
+    dataset_name: str = "",
+    source_path: str = "",
+    purpose: str = "",
+    owner: str = "",
+    license_name: str = "",
+    dedupe_key: str = "id",
+) -> dict[str, Any]:
+    input_records = list(records)
+    valid_records, validation_errors = _normalize_valid_records(input_records)
+    deduped_records, duplicate_count = dedupe_records(valid_records, key=dedupe_key)
+    duplicate_ids = _duplicate_id_count(valid_records)
+    duplicate_contents = _duplicate_content_count(valid_records)
+    prompt_lengths = [len(record["prompt"]) for record in valid_records]
+    expected_lengths = [len(record["expected"]) for record in valid_records]
+
+    tag_counts: Counter[str] = Counter()
+    metadata_keys: Counter[str] = Counter()
+    for record in valid_records:
+        tag_counts.update(record["tags"])
+        metadata_keys.update(record["metadata"].keys())
+
+    summary = {
+        "input_count": len(input_records),
+        "valid_count": len(valid_records),
+        "invalid_count": len(validation_errors),
+        "output_count": len(deduped_records),
+        "duplicate_count": duplicate_count,
+        "duplicate_id_count": duplicate_ids,
+        "duplicate_content_count": duplicate_contents,
+        "avg_prompt_chars": _average_length(prompt_lengths),
+        "max_prompt_chars": max(prompt_lengths, default=0),
+        "avg_expected_chars": _average_length(expected_lengths),
+        "max_expected_chars": max(expected_lengths, default=0),
+    }
+    card = {
+        "schema_version": "eval-dataset-forge-card/v1",
+        "name": dataset_name or "eval dataset",
+        "source": source_path,
+        "purpose": purpose,
+        "owner": owner,
+        "license": license_name,
+        "dedupe_key": dedupe_key,
+        "dataset_hash": _records_hash(deduped_records),
+        "summary": summary,
+        "field_coverage": _field_coverage(valid_records),
+        "tags": dict(sorted(tag_counts.items())),
+        "metadata_keys": dict(sorted(metadata_keys.items())),
+        "sample_ids": [record["id"] for record in deduped_records[:10]],
+        "validation_errors": validation_errors[:20],
+        "warnings": _dataset_card_warnings(summary, tag_counts, metadata_keys),
+    }
+    return card
+
+
+def render_dataset_card(card: dict[str, Any], output_format: str = "markdown") -> str:
+    fmt = output_format.lower()
+    if fmt == "json":
+        return json.dumps(card, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if fmt == "markdown":
+        return _render_dataset_card_markdown(card)
+    raise DatasetError("Dataset card format must be markdown or json.")
+
+
 def dataset_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     normalized = [normalize_record(record) for record in records]
     tag_counts: Counter[str] = Counter()
@@ -300,3 +366,147 @@ def dataset_stats(records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "tags": dict(sorted(tag_counts.items())),
         "metadata_keys": dict(sorted(metadata_keys.items())),
     }
+
+
+def _normalize_valid_records(records: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    valid: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for index, record in enumerate(records, start=1):
+        try:
+            normalized = normalize_record(record)
+        except DatasetError as exc:
+            errors.append(f"record {index}: {exc}")
+            continue
+        missing = [field for field in REQUIRED_FIELDS if not normalized[field]]
+        if missing:
+            errors.append(f"record {index}: missing required field(s): {', '.join(missing)}")
+            continue
+        valid.append(normalized)
+    return valid, errors
+
+
+def _field_coverage(records: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
+    total = len(records)
+    coverage: dict[str, dict[str, float | int]] = {}
+    for field in (*REQUIRED_FIELDS, *OPTIONAL_FIELDS):
+        if field == "metadata":
+            count = sum(1 for record in records if bool(record.get("metadata")))
+        elif field == "tags":
+            count = sum(1 for record in records if bool(record.get("tags")))
+        else:
+            count = sum(1 for record in records if bool(record.get(field)))
+        coverage[field] = {
+            "count": count,
+            "percent": round((count / total) * 100, 2) if total else 0.0,
+        }
+    return coverage
+
+
+def _duplicate_id_count(records: list[dict[str, Any]]) -> int:
+    return sum(count - 1 for count in Counter(record["id"] for record in records).values() if count > 1)
+
+
+def _duplicate_content_count(records: list[dict[str, Any]]) -> int:
+    return sum(count - 1 for count in Counter(_content_hash(record) for record in records).values() if count > 1)
+
+
+def _average_length(values: list[int]) -> float:
+    return round(sum(values) / len(values), 2) if values else 0.0
+
+
+def _records_hash(records: list[dict[str, Any]]) -> str:
+    payload = json.dumps(records, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _dataset_card_warnings(
+    summary: dict[str, Any],
+    tag_counts: Counter[str],
+    metadata_keys: Counter[str],
+) -> list[str]:
+    warnings: list[str] = []
+    if summary["invalid_count"]:
+        warnings.append("Dataset has invalid records; inspect validation_errors before publishing.")
+    if summary["duplicate_count"]:
+        warnings.append("Dataset has duplicate records removed by the selected dedupe key.")
+    if summary["duplicate_id_count"]:
+        warnings.append("Dataset contains duplicate IDs; stable unique IDs make eval changes easier to review.")
+    if summary["duplicate_content_count"]:
+        warnings.append("Dataset contains duplicate prompt/expected pairs; confirm repeated coverage is intentional.")
+    if not tag_counts and summary["valid_count"]:
+        warnings.append("No tags found; tags help reviewers understand eval coverage.")
+    if not metadata_keys and summary["valid_count"]:
+        warnings.append("No metadata keys found; metadata helps track source, owner, category, and difficulty.")
+    if summary["max_prompt_chars"] >= 4000:
+        warnings.append("At least one prompt is very long; confirm it is intentional for CI/runtime cost.")
+    return warnings
+
+
+def _render_dataset_card_markdown(card: dict[str, Any]) -> str:
+    summary = card["summary"]
+    lines = [
+        f"# Eval Dataset Card: {_md(card['name'])}",
+        "",
+        "## Summary",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+        f"| Source | {_md(card.get('source') or '-')} |",
+        f"| Purpose | {_md(card.get('purpose') or '-')} |",
+        f"| Owner | {_md(card.get('owner') or '-')} |",
+        f"| License | {_md(card.get('license') or '-')} |",
+        f"| Dedupe key | `{_md(card['dedupe_key'])}` |",
+        f"| Dataset hash | `{_md(card['dataset_hash'])}` |",
+        f"| Input records | {summary['input_count']} |",
+        f"| Valid records | {summary['valid_count']} |",
+        f"| Output records | {summary['output_count']} |",
+        f"| Invalid records | {summary['invalid_count']} |",
+        f"| Duplicate records | {summary['duplicate_count']} |",
+        f"| Duplicate IDs | {summary['duplicate_id_count']} |",
+        f"| Duplicate content | {summary['duplicate_content_count']} |",
+        f"| Avg prompt chars | {summary['avg_prompt_chars']} |",
+        f"| Max prompt chars | {summary['max_prompt_chars']} |",
+        f"| Avg expected chars | {summary['avg_expected_chars']} |",
+        f"| Max expected chars | {summary['max_expected_chars']} |",
+        "",
+        "## Field Coverage",
+        "",
+        "| Field | Count | Percent |",
+        "| --- | ---: | ---: |",
+    ]
+    for field, coverage in card["field_coverage"].items():
+        lines.append(f"| `{_md(field)}` | {coverage['count']} | {coverage['percent']}% |")
+
+    lines.extend(["", "## Tag Distribution", ""])
+    lines.extend(_counter_lines(card["tags"], "No tags found."))
+    lines.extend(["", "## Metadata Keys", ""])
+    lines.extend(_counter_lines(card["metadata_keys"], "No metadata keys found."))
+    lines.extend(["", "## Sample IDs", ""])
+    sample_ids = card.get("sample_ids") or []
+    if sample_ids:
+        lines.extend(f"- `{_md(str(sample_id))}`" for sample_id in sample_ids)
+    else:
+        lines.append("- No valid records.")
+
+    warnings = card.get("warnings") or []
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend(f"- {_md(str(warning))}" for warning in warnings)
+
+    validation_errors = card.get("validation_errors") or []
+    if validation_errors:
+        lines.extend(["", "## Validation Errors", ""])
+        lines.extend(f"- {_md(str(error))}" for error in validation_errors)
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _counter_lines(values: dict[str, int], empty_message: str) -> list[str]:
+    if not values:
+        return [f"- {empty_message}"]
+    return [f"- `{_md(str(name))}`: {count}" for name, count in values.items()]
+
+
+def _md(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")

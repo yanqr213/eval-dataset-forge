@@ -20,3 +20,7 @@ jobs:
           eval-dataset-forge validate examples/basic.json
           eval-dataset-forge build examples/basic.csv -o outputs/basic.jsonl --shuffle --seed 123
           eval-dataset-forge stats examples/basic.json
+          eval-dataset-forge card examples/basic.json --format markdown --output outputs/dataset-card.md --name "basic eval"
+          test -s outputs/dataset-card.md
+          eval-dataset-forge card examples/basic.json --format json --output outputs/dataset-card.json --name "basic eval"
+          test -s outputs/dataset-card.json

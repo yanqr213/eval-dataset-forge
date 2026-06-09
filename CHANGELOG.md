@@ -4,6 +4,14 @@
 
 所有重要变更都会记录在这里。
 
+## [0.2.0] - 2026-06-09
+
+### 新增
+
+- 新增 `card` 命令，可生成 Markdown dataset card 或 JSON manifest。
+- dataset card 包含数据集哈希、字段覆盖率、标签/metadata 分布、重复记录统计和校验警告。
+- GitHub Actions 增加 dataset card smoke test。
+
 ## [0.1.0] - 2026-06-07
 
 ### 新增
@@ -21,6 +29,14 @@
 ## English
 
 All notable changes to this project will be documented in this file.
+
+## [0.2.0] - 2026-06-09
+
+### Added
+
+- Added the `card` command for Markdown dataset cards and JSON manifests.
+- Dataset cards include dataset hashes, field coverage, tag/metadata distributions, duplicate counts, and validation warnings.
+- Added GitHub Actions smoke coverage for dataset card generation.
 
 ## [0.1.0] - 2026-06-07
 

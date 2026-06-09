@@ -9,8 +9,10 @@ from . import __version__
 from .core import (
     DatasetError,
     build_dataset,
+    create_dataset_card,
     dataset_stats,
     read_records,
+    render_dataset_card,
     split_records,
     validate_records,
     write_records,
@@ -67,6 +69,18 @@ def build_parser() -> argparse.ArgumentParser:
     stats = subparsers.add_parser("stats", help="Print dataset statistics as JSON.")
     add_input_args(stats)
     stats.set_defaults(func=cmd_stats)
+
+    card = subparsers.add_parser("card", help="Generate a reviewable dataset card or JSON manifest.")
+    add_input_args(card)
+    card.add_argument("--format", choices=("markdown", "json"), default="markdown", help="Dataset card output format.")
+    card.add_argument("--output", type=Path, help="Write the dataset card to this path instead of stdout.")
+    card.add_argument("--name", default="", help="Human-readable dataset name.")
+    card.add_argument("--purpose", default="", help="Dataset purpose or eval workflow.")
+    card.add_argument("--owner", default="", help="Owning team or reviewer.")
+    card.add_argument("--license", default="", help="Dataset license or sharing policy.")
+    card.add_argument("--dedupe-key", choices=("id", "content"), default="id", help="Deduplication strategy for manifest hash.")
+    card.add_argument("--check", action="store_true", help="Exit 1 when the generated card contains warnings.")
+    card.set_defaults(func=cmd_card)
     return parser
 
 
@@ -127,6 +141,26 @@ def cmd_stats(args: argparse.Namespace) -> int:
     records = read_records(args.input, args.input_format)
     print(json.dumps(dataset_stats(records), ensure_ascii=False, indent=2, sort_keys=True))
     return 0
+
+
+def cmd_card(args: argparse.Namespace) -> int:
+    records = read_records(args.input, args.input_format)
+    card = create_dataset_card(
+        records,
+        dataset_name=args.name,
+        source_path=str(args.input),
+        purpose=args.purpose,
+        owner=args.owner,
+        license_name=args.license,
+        dedupe_key=args.dedupe_key,
+    )
+    rendered = render_dataset_card(card, args.format)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    else:
+        print(rendered, end="")
+    return 1 if args.check and card["warnings"] else 0
 
 
 if __name__ == "__main__":

@@ -90,6 +90,48 @@ class CliTests(unittest.TestCase):
             self.assertEqual(parsed["records"], 4)
             self.assertEqual(parsed["duplicate_ids"], 1)
 
+    def test_card_outputs_json_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, out, _ = self.run_cli(
+                [
+                    "card",
+                    str(self.write_input(Path(tmp))),
+                    "--format",
+                    "json",
+                    "--name",
+                    "ci eval",
+                    "--purpose",
+                    "PR review",
+                ]
+            )
+            self.assertEqual(result, 0)
+            parsed = json.loads(out)
+            self.assertEqual(parsed["name"], "ci eval")
+            self.assertEqual(parsed["summary"]["input_count"], 4)
+            self.assertTrue(parsed["dataset_hash"].startswith("sha256:"))
+            self.assertIn("field_coverage", parsed)
+
+    def test_card_writes_markdown_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            output = tmp_path / "reports" / "dataset-card.md"
+            result, _, _ = self.run_cli(["card", str(self.write_input(tmp_path)), "--output", str(output)])
+            self.assertEqual(result, 0)
+            text = output.read_text(encoding="utf-8")
+            self.assertIn("Eval Dataset Card", text)
+            self.assertIn("Dataset hash", text)
+            self.assertNotIn("Classify the tone", text)
+            self.assertNotIn("Answer A", text)
+
+    def test_card_check_returns_one_for_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            input_path = tmp_path / "untagged.json"
+            input_path.write_text(json.dumps([{"id": "one", "prompt": "A", "expected": "B"}]), encoding="utf-8")
+            result, out, _ = self.run_cli(["card", str(input_path), "--check"])
+            self.assertEqual(result, 1)
+            self.assertIn("No tags found", out)
+
 
 if __name__ == "__main__":
     unittest.main()
